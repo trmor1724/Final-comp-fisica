@@ -1,241 +1,251 @@
-import os
-import math
-import numpy as np
 import pandas as pd
-import altair as alt
 import streamlit as st
-from datetime import datetime, timezone
-from influxdb_client import InfluxDBClient
+from PIL import Image
+import numpy as np
+from datetime import datetime
 
-# ----------------------------
-# Config general
-# ----------------------------
-st.set_page_config(page_title="Cubo IoT — Confort & Vibración", layout="wide", page_icon="📡")
-TZ = "America/Bogota"
-
-# ----------------------------
-# Conexión InfluxDB (cache)
-# ----------------------------
-@st.cache_resource(show_spinner=False)
-def get_client():
-    s = st.secrets["influxdb"]
-    return InfluxDBClient(url=s["url"], token=s["token"], org=s["org"])
-
-@st.cache_data(show_spinner=False, ttl=15)
-def query_flux(query: str) -> pd.DataFrame:
-    q = get_client().query_api()
-    frames = q.query_data_frame(query=query)
-    if isinstance(frames, list):
-        if not frames:
-            return pd.DataFrame()
-        df = pd.concat(frames, ignore_index=True)
-    else:
-        df = frames
-    # Normaliza tiempos y TZ
-    if "_time" in df.columns:
-        df["_time"] = pd.to_datetime(df["_time"], utc=True).dt.tz_convert(TZ)
-    return df
-
-@st.cache_data(show_spinner=False)
-def list_devices(bucket: str, start: str = "-30d"):
-    query = f'''
-import "influxdata/influxdb/schema"
-schema.tagValues(
-  bucket: "{bucket}",
-  tag: "device_id",
-  predicate: (r) => r._measurement == "dht22" or r._measurement == "mpu6050",
-  start: {start}
+# Page configuration (custom icons, layout)
+st.set_page_config(
+    page_title="Análisis de Sensores - Mi Ciudad",
+    page_icon="📍",
+    layout="wide"
 )
-'''
-    df = query_flux(query)
-    vals = sorted(df["_value"].dropna().unique().tolist()) if "_value" in df else []
-    return vals
 
-def build_flux(bucket, measurement, field_regex, device_id, t_start, window):
-    dev = f'|> filter(fn: (r) => r.device_id == "{device_id}")' if device_id else ""
-    return f'''
-from(bucket: "{bucket}")
-  |> range(start: {t_start})
-  |> filter(fn: (r) => r._measurement == "{measurement}")
-  |> filter(fn: (r) => r._field =~ /{field_regex}/)
-  {dev}
-  |> aggregateWindow(every: {window}, fn: mean, createEmpty: false)
-  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> sort(columns: ["_time"])
-'''
+# Custom CSS (Updated styles for a fresh look)
+st.markdown("""
+    <style>
+    /* Custom page layout */
+    .main {
+        padding: 2rem;
+        background-color: #f4f6f9;
+        font-family: 'Arial', sans-serif;
+    }
+    
+    /* Custom title and subtitle styles */
+    h1, h2, h3 {
+        color: #1e2a47;
+        font-weight: bold;
+    }
+    
+    /* Tab bar background */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #2980b9;
+    }
+    
+    /* Tab active state */
+    .stTabs [data-baseweb="tab-list"] > div > div[aria-selected="true"] {
+        background-color: #f39c12;
+        color: white;
+    }
+    
+    /* Tab content background */
+    .stTabContent {
+        background-color: #ffffff;
+        padding: 1rem;
+        border-radius: 10px;
+        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Chart styling */
+    .streamlit-expanderHeader {
+        color: #2980b9;
+        font-size: 1.2rem;
+    }
+    
+    .stButton > button {
+        background-color: #e67e22;
+        color: white;
+        border-radius: 10px;
+        font-weight: bold;
+    }
+    
+    /* Map display styling */
+    .stMap {
+        border-radius: 15px;
+        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Footer styling */
+    footer {
+        color: #777;
+        font-size: 0.9rem;
+        background-color: #f1f1f1;
+        padding: 10px;
+        text-align: center;
+    }
+    
+    .stMarkdown, .stDataFrame {
+        font-family: 'Arial', sans-serif;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-def df_wide(bucket, measurement, field_regex, device_id, t_start, window):
-    return query_flux(build_flux(bucket, measurement, field_regex, device_id, t_start, window))
+# Title and description
+st.title('📊 Análisis de Datos de Sensores - Mi Ciudad')
+st.markdown("""
+    Bienvenido a la plataforma de análisis de datos de sensores urbanos. 
+    Explora la información recolectada en diferentes puntos de la ciudad para un mejor entendimiento.
+""")
 
-def last_value(df: pd.DataFrame, col: str):
+# Custom map section with rounded corners and shadow
+st.subheader("📍 Ubicación de los Sensores - Universidad EAFIT")
+eafit_location = pd.DataFrame({
+    'lat': [6.2006],
+    'lon': [-75.5783],
+    'location': ['Universidad EAFIT']
+})
+
+# Display map with custom style
+st.map(eafit_location, zoom=15)
+
+# File uploader with a custom button style
+uploaded_file = st.file_uploader('Cargar archivo CSV', type=['csv'])
+
+if uploaded_file is not None:
     try:
-        return float(df[col].dropna().iloc[-1])
-    except Exception:
-        return None
+        # Load and process data from the CSV
+        df1 = pd.read_csv(uploaded_file)
+        
+        # Renombrar la columna a 'variable'
+        if 'Time' in df1.columns:
+            other_columns = [col for col in df1.columns if col != 'Time']
+            if len(other_columns) > 0:
+                df1 = df1.rename(columns={other_columns[0]: 'variable'})
+        else:
+            df1 = df1.rename(columns={df1.columns[0]: 'variable'})
+        
+        # Procesar la columna de tiempo si existe
+        if 'Time' in df1.columns:
+            df1['Time'] = pd.to_datetime(df1['Time'])
+            df1 = df1.set_index('Time')
 
-def compute_indicators(df_dht, df_mpu, th):
-    alerts = []
-    metrics = {}
+        # Create tabs for different analyses
+        tab1, tab2, tab3, tab4 = st.tabs(["📈 Visualización", "📊 Estadísticas", "🔍 Filtros", "🗺 Información del Sitio"])
 
-    # Temperatura / Humedad
-    t = last_value(df_dht, "temperature") if not df_dht.empty and "temperature" in df_dht.columns else None
-    h = last_value(df_dht, "humidity") if not df_dht.empty and "humidity" in df_dht.columns else None
-    if t is not None:
-        if t > th["temp_high"]:
-            alerts.append(("Alta temperatura", f"{t:.1f} °C > {th['temp_high']} °C"))
-        elif t < th["temp_low"]:
-            alerts.append(("Baja temperatura", f"{t:.1f} °C < {th['temp_low']} °C"))
-    if h is not None:
-        if h > th["hum_high"]:
-            alerts.append(("Humedad elevada", f"{h:.1f}% > {th['hum_high']}%"))
-        elif h < th["hum_low"]:
-            alerts.append(("Humedad baja", f"{h:.1f}% < {th['hum_low']}%"))
+        with tab1:
+            st.subheader('Visualización de Datos')
+            
+            # Chart type selector with custom colors and style
+            chart_type = st.selectbox(
+                "Seleccione el tipo de gráfico",
+                ["Línea", "Área", "Barra"],
+                help="Elija cómo desea visualizar los datos."
+            )
+            
+            # Create plot based on selection
+            if chart_type == "Línea":
+                st.line_chart(df1["variable"])
+            elif chart_type == "Área":
+                st.area_chart(df1["variable"])
+            else:
+                st.bar_chart(df1["variable"])
 
-    metrics["temperature"] = t
-    metrics["humidity"] = h
+            # Raw data display with toggle
+            if st.checkbox('Mostrar datos crudos'):
+                st.write(df1)
 
-    # Aceleración / Movimiento
-    accel_mag = None
-    tilt = {"pitch": None, "roll": None}
-    if not df_mpu.empty:
-        has_acc = all(c in df_mpu.columns for c in ["accel_x","accel_y","accel_z"])
-        if has_acc:
-            ax = df_mpu["accel_x"].dropna().to_numpy()
-            ay = df_mpu["accel_y"].dropna().to_numpy()
-            az = df_mpu["accel_z"].dropna().to_numpy()
-            if ax.size and ay.size and az.size:
-                accel_mag = float(math.sqrt(ax[-1]**2 + ay[-1]**2 + az[-1]**2))
-                if accel_mag > th["accel_g"]:
-                    alerts.append(("Vibración/movimiento", f"|a|={accel_mag:.2f} g > {th['accel_g']} g"))
+        with tab2:
+            st.subheader('Análisis Estadístico')
+            
+            # Statistical summary with bold metrics
+            stats_df = df1["variable"].describe()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.dataframe(stats_df)
+            
+            with col2:
+                # Additional statistics
+                st.metric("Valor Promedio", f"{stats_df['mean']:.2f}")
+                st.metric("Valor Máximo", f"{stats_df['max']:.2f}")
+                st.metric("Valor Mínimo", f"{stats_df['min']:.2f}")
+                st.metric("Desviación Estándar", f"{stats_df['std']:.2f}")
 
-                # Estimación estática de pitch/roll si no existen
-                if "pitch" not in df_mpu.columns or "roll" not in df_mpu.columns:
-                    pitch = math.degrees(math.atan2(ax[-1], math.sqrt(ay[-1]**2 + az[-1]**2)))
-                    roll  = math.degrees(math.atan2(ay[-1], math.sqrt(ax[-1]**2 + az[-1]**2)))
-                    tilt["pitch"], tilt["roll"] = pitch, roll
-                else:
-                    tilt["pitch"] = last_value(df_mpu, "pitch")
-                    tilt["roll"]  = last_value(df_mpu, "roll")
+        with tab3:
+            st.subheader('Filtros de Datos')
+            
+            # Calcular rango de valores
+            min_value = float(df1["variable"].min())
+            max_value = float(df1["variable"].max())
+            mean_value = float(df1["variable"].mean())
+            
+            # Verificar si hay variación en los datos
+            if min_value == max_value:
+                st.warning(f"⚠ Todos los valores en el dataset son iguales: {min_value:.2f}")
+                st.info("No es posible aplicar filtros cuando no hay variación en los datos.")
+                st.dataframe(df1)
+            else:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Minimum value filter with custom slider style
+                    min_val = st.slider(
+                        'Valor mínimo',
+                        min_value,
+                        max_value,
+                        mean_value,
+                        key="min_val",
+                        help="Ajuste el valor mínimo para filtrar los datos."
+                    )
+                    
+                    filtrado_df_min = df1[df1["variable"] > min_val]
+                    st.write(f"Registros con valor superior a {min_val:.2f}:")
+                    st.dataframe(filtrado_df_min)
+                    
+                with col2:
+                    # Maximum value filter with custom slider style
+                    max_val = st.slider(
+                        'Valor máximo',
+                        min_value,
+                        max_value,
+                        mean_value,
+                        key="max_val",
+                        help="Ajuste el valor máximo para filtrar los datos."
+                    )
+                    
+                    filtrado_df_max = df1[df1["variable"] < max_val]
+                    st.write(f"Registros con valor inferior a {max_val:.2f}:")
+                    st.dataframe(filtrado_df_max)
 
-    metrics["accel_mag"] = accel_mag
-    metrics["pitch"] = tilt["pitch"]
-    metrics["roll"]  = tilt["roll"]
+                # Download filtered data with custom button style
+                if st.button('Descargar datos filtrados'):
+                    csv = filtrado_df_min.to_csv().encode('utf-8')
+                    st.download_button(
+                        label="Descargar CSV",
+                        data=csv,
+                        file_name='datos_filtrados.csv',
+                        mime='text/csv',
+                    )
 
-    if metrics["pitch"] is not None and abs(metrics["pitch"]) > th["tilt_deg"]:
-        alerts.append(("Inclinación anómala (pitch)", f"{metrics['pitch']:.1f}° > {th['tilt_deg']}°"))
-    if metrics["roll"] is not None and abs(metrics["roll"]) > th["tilt_deg"]:
-        alerts.append(("Inclinación anómala (roll)", f"{metrics['roll']:.1f}° > {th['tilt_deg']}°"))
+        with tab4:
+            st.subheader("Información del Sitio de Medición")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("### Ubicación del Sensor")
+                st.write("*Universidad EAFIT*")
+                st.write("- Latitud: 6.2006")
+                st.write("- Longitud: -75.5783")
+                st.write("- Altitud: ~1,495 metros sobre el nivel del mar")
+            
+            with col2:
+                st.write("### Detalles del Sensor")
+                st.write("- Tipo: ESP32")
+                st.write("- Variable medida: Según configuración del sensor")
+                st.write("- Frecuencia de medición: Según configuración")
+                st.write("- Ubicación: Campus universitario")
 
-    return metrics, alerts
-
-# ----------------------------
-# Sidebar / Controles
-# ----------------------------
-s = st.secrets["influxdb"]
-bucket = s["bucket"]
-st.sidebar.header("Filtros")
-time_range = st.sidebar.selectbox("Rango de tiempo", ["-30m","-1h","-6h","-12h","-24h","-3d","-7d"], index=3)
-window = st.sidebar.selectbox("Ventana", ["10s","30s","1m","5m","15m"], index=2)
-
-devices = ["(Todos)"] + list_devices(bucket)
-device_sel = st.sidebar.selectbox("Dispositivo (device_id)", devices, index=0)
-device = None if device_sel == "(Todos)" else device_sel
-
-st.sidebar.header("Umbrales")
-th = {
-    "temp_low": 18.0,
-    "temp_high": 28.0,
-    "hum_low": 30.0,
-    "hum_high": 70.0,
-    "accel_g": 1.20,   # Magnitud de aceleración en g
-    "tilt_deg": 25.0,  # Inclinación permitida
-}
-th["temp_low"]  = st.sidebar.number_input("Temp. mínima (°C)", value=th["temp_low"], step=0.5)
-th["temp_high"] = st.sidebar.number_input("Temp. máxima (°C)", value=th["temp_high"], step=0.5)
-th["hum_low"]   = st.sidebar.number_input("Humedad mínima (%)", value=th["hum_low"], step=1.0)
-th["hum_high"]  = st.sidebar.number_input("Humedad máxima (%)", value=th["hum_high"], step=1.0)
-th["accel_g"]   = st.sidebar.number_input("Umbral |a| (g)", value=th["accel_g"], step=0.05, format="%.2f")
-th["tilt_deg"]  = st.sidebar.number_input("Umbral inclinación (°)", value=th["tilt_deg"], step=1.0)
-
-st.sidebar.header("Actualización")
-auto = st.sidebar.checkbox("Auto-actualizar cada 15 s", value=True)
-if auto:
-    # Autorefresh (no bloqueante)
-    st.autorefresh(interval=15000, key="refresher")
-
-st.sidebar.caption("Zona horaria: " + TZ)
-
-# ----------------------------
-# Encabezado
-# ----------------------------
-st.title("📡 Cubo IoT — Confort térmico & vibración")
-st.markdown("Monitoreo de **temperatura/humedad (DHT22)** y **movimiento/orientación (MPU6050)**.")
-
-# ----------------------------
-# Queries
-# ----------------------------
-df_dht = df_wide(bucket, "dht22", "^(temperature|humidity)$", device, time_range, window)
-df_mpu = df_wide(bucket, "mpu6050", "^(accel_x|accel_y|accel_z|gyro_x|gyro_y|gyro_z|pitch|roll|yaw)$", device, time_range, window)
-
-# ----------------------------
-# Indicadores / Alertas
-# ----------------------------
-metrics, alerts = compute_indicators(df_dht, df_mpu, th)
-
-# Banner de alertas
-if alerts:
-    for title, detail in alerts:
-        st.error(f"**{title}** — {detail}")
+    except Exception as e:
+        st.error(f'Error al procesar el archivo: {str(e)}')
+        st.info('Asegúrese de que el archivo CSV tenga al menos una columna con datos.')
 else:
-    st.success("Condiciones dentro de rangos establecidos.")
+    st.warning('Por favor, cargue un archivo CSV para comenzar el análisis.')
 
-# Métricas de cabecera
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("🌡️ Temperatura (°C)", f"{metrics['temperature']:.1f}" if metrics['temperature'] is not None else "—")
-col2.metric("💧 Humedad (%)", f"{metrics['humidity']:.1f}" if metrics['humidity'] is not None else "—")
-col3.metric("∥a∥ (g)", f"{metrics['accel_mag']:.2f}" if metrics['accel_mag'] is not None else "—")
-tilt_txt = None
-if metrics["pitch"] is not None or metrics["roll"] is not None:
-    p = f"{metrics['pitch']:.0f}°" if metrics['pitch'] is not None else "—"
-    r = f"{metrics['roll']:.0f}°" if metrics['roll'] is not None else "—"
-    tilt_txt = f"{p} / {r}"
-col4.metric("Inclinación (pitch/roll)", tilt_txt if tilt_txt else "—")
-
-# ----------------------------
-# Gráficas
-# ----------------------------
-tab1, tab2 = st.tabs(["Ambiente", "Movimiento"])
-
-with tab1:
-    st.subheader("Temperatura y Humedad")
-    if df_dht.empty:
-        st.info("Sin datos para DHT22 en el periodo seleccionado.")
-    else:
-        dfp = df_dht.rename(columns={"_time":"time"})
-        fields = [c for c in ["temperature","humidity"] if c in dfp.columns]
-        if fields:
-            base = alt.Chart(dfp).mark_line().encode(
-                x=alt.X("time:T", title="Tiempo"),
-                tooltip=["time:T"] + fields
-            )
-            charts = [base.encode(y=alt.Y(f"{f}:Q", title=f)) for f in fields]
-            st.altair_chart(alt.vconcat(*charts).resolve_scale(y='independent'), use_container_width=True)
-        st.download_button("Descargar CSV (Ambiente)", df_dht.to_csv(index=False), "dht22.csv", "text/csv")
-
-with tab2:
-    st.subheader("Aceleraciones y Orientación")
-    if df_mpu.empty:
-        st.info("Sin datos para MPU6050 en el periodo seleccionado.")
-    else:
-        dfp = df_mpu.rename(columns={"_time":"time"})
-        plot_fields = [c for c in ["accel_x","accel_y","accel_z","pitch","roll"] if c in dfp.columns]
-        if plot_fields:
-            base = alt.Chart(dfp).mark_line().encode(
-                x=alt.X("time:T", title="Tiempo"),
-                tooltip=["time:T"] + plot_fields
-            )
-            charts = [base.encode(y=alt.Y(f"{f}:Q", title=f)) for f in plot_fields]
-            st.altair_chart(alt.vconcat(*charts).resolve_scale(y='independent'), use_container_width=True)
-        st.download_button("Descargar CSV (Movimiento)", df_mpu.to_csv(index=False), "mpu6050.csv", "text/csv")
-
-st.caption("Última actualización: " + datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z"))
+# Custom footer styling
+st.markdown("""
+    ---
+    Desarrollado para el análisis de datos de sensores urbanos.
+    Ubicación: Universidad EAFIT, Medellín, Colombia
+""", unsafe_allow_html=True)
