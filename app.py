@@ -4,68 +4,74 @@ from PIL import Image
 import numpy as np
 from datetime import datetime
 
-# Page configuration (custom icons, layout)
+# Configuración de la página con icono, layout y título personalizados
 st.set_page_config(
     page_title="Análisis de Sensores - Mi Ciudad",
-    page_icon="📍",
-    layout="wide"
+    page_icon="📍",  # Icono personalizado
+    layout="wide"    # Layout de página ancha
 )
 
-# Custom CSS (Updated styles for a fresh look)
+# Personalización CSS para modificar la apariencia general
 st.markdown("""
     <style>
-    /* Custom page layout */
+    /* Background and overall style */
     .main {
+        background-color: #eef2f7;
         padding: 2rem;
-        background-color: #f4f6f9;
         font-family: 'Arial', sans-serif;
     }
-    
-    /* Custom title and subtitle styles */
-    h1, h2, h3 {
-        color: #1e2a47;
+
+    /* Title and Subtitle Styling */
+    h1 {
+        font-size: 2.5rem;
         font-weight: bold;
+        color: #2c3e50;
     }
-    
-    /* Tab bar background */
+    h2, h3 {
+        color: #34495e;
+    }
+
+    /* Tab Background Color */
     .stTabs [data-baseweb="tab-list"] {
-        background-color: #2980b9;
+        background-color: #3498db;
+        border-radius: 10px;
     }
     
-    /* Tab active state */
+    /* Active Tab Style */
     .stTabs [data-baseweb="tab-list"] > div > div[aria-selected="true"] {
         background-color: #f39c12;
         color: white;
     }
-    
-    /* Tab content background */
+
+    /* General layout of tabs */
     .stTabContent {
-        background-color: #ffffff;
+        background-color: white;
         padding: 1rem;
-        border-radius: 10px;
-        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
-    
-    /* Chart styling */
-    .streamlit-expanderHeader {
-        color: #2980b9;
-        font-size: 1.2rem;
-    }
-    
+
+    /* Button Style */
     .stButton > button {
         background-color: #e67e22;
         color: white;
-        border-radius: 10px;
+        border-radius: 12px;
+        padding: 10px 20px;
         font-weight: bold;
+        border: none;
+        transition: background-color 0.3s;
     }
-    
-    /* Map display styling */
+    .stButton > button:hover {
+        background-color: #d35400;
+    }
+
+    /* Map Style */
     .stMap {
-        border-radius: 15px;
-        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+        border-radius: 20px;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.15);
     }
-    
-    /* Footer styling */
+
+    /* Footer Style */
     footer {
         color: #777;
         font-size: 0.9rem;
@@ -73,40 +79,50 @@ st.markdown("""
         padding: 10px;
         text-align: center;
     }
-    
-    .stMarkdown, .stDataFrame {
+
+    /* Custom Grid Style */
+    .stColumns > div {
+        padding: 20px;
+        border-radius: 10px;
+    }
+
+    /* Custom Dataframe Styling */
+    .stDataFrame {
         font-family: 'Arial', sans-serif;
+        border-radius: 8px;
+        background-color: #f9f9f9;
+        padding: 1rem;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Title and description
+# Título principal
 st.title('📊 Análisis de Datos de Sensores - Mi Ciudad')
 st.markdown("""
-    Bienvenido a la plataforma de análisis de datos de sensores urbanos. 
-    Explora la información recolectada en diferentes puntos de la ciudad para un mejor entendimiento.
+    Bienvenido al análisis de datos de sensores urbanos. 
+    Explore los datos recogidos en diferentes puntos de la ciudad para comprender mejor el entorno.
 """)
 
-# Custom map section with rounded corners and shadow
-st.subheader("📍 Ubicación de los Sensores - Universidad EAFIT")
-eafit_location = pd.DataFrame({
-    'lat': [6.2006],
-    'lon': [-75.5783],
-    'location': ['Universidad EAFIT']
+# Ubicación del Sensor con un mapa estilizado (ahora El Tesoro)
+st.subheader("📍 Ubicación del Sensor - Centro Comercial El Tesoro")
+el_tesoro_location = pd.DataFrame({
+    'lat': [6.1861],  # Coordenada actualizada para El Tesoro
+    'lon': [-75.5776],  # Coordenada actualizada para El Tesoro
+    'location': ['Centro Comercial El Tesoro']
 })
 
-# Display map with custom style
-st.map(eafit_location, zoom=15)
+# Muestra el mapa con borde redondeado y sombra
+st.map(el_tesoro_location, zoom=15)
 
-# File uploader with a custom button style
+# Carga de archivo CSV
 uploaded_file = st.file_uploader('Cargar archivo CSV', type=['csv'])
 
 if uploaded_file is not None:
     try:
-        # Load and process data from the CSV
+        # Cargar y procesar los datos del archivo CSV
         df1 = pd.read_csv(uploaded_file)
         
-        # Renombrar la columna a 'variable'
+        # Renombrar la columna de la variable de interés
         if 'Time' in df1.columns:
             other_columns = [col for col in df1.columns if col != 'Time']
             if len(other_columns) > 0:
@@ -119,20 +135,19 @@ if uploaded_file is not None:
             df1['Time'] = pd.to_datetime(df1['Time'])
             df1 = df1.set_index('Time')
 
-        # Create tabs for different analyses
-        tab1, tab2, tab3, tab4 = st.tabs(["📈 Visualización", "📊 Estadísticas", "🔍 Filtros", "🗺 Información del Sitio"])
+        # Crear pestañas para análisis diferentes
+        tab1, tab2, tab3, tab4 = st.tabs(["📈 Visualización", "📊 Estadísticas", "🔍 Filtros", "🗺️ Información del Sitio"])
 
         with tab1:
             st.subheader('Visualización de Datos')
             
-            # Chart type selector with custom colors and style
+            # Selector de tipo de gráfico con colores personalizados
             chart_type = st.selectbox(
                 "Seleccione el tipo de gráfico",
-                ["Línea", "Área", "Barra"],
-                help="Elija cómo desea visualizar los datos."
+                ["Línea", "Área", "Barra"]
             )
             
-            # Create plot based on selection
+            # Generar el gráfico según la selección
             if chart_type == "Línea":
                 st.line_chart(df1["variable"])
             elif chart_type == "Área":
@@ -140,14 +155,14 @@ if uploaded_file is not None:
             else:
                 st.bar_chart(df1["variable"])
 
-            # Raw data display with toggle
+            # Opción para mostrar los datos crudos
             if st.checkbox('Mostrar datos crudos'):
                 st.write(df1)
 
         with tab2:
             st.subheader('Análisis Estadístico')
             
-            # Statistical summary with bold metrics
+            # Resumen estadístico
             stats_df = df1["variable"].describe()
             
             col1, col2 = st.columns(2)
@@ -156,7 +171,7 @@ if uploaded_file is not None:
                 st.dataframe(stats_df)
             
             with col2:
-                # Additional statistics
+                # Estadísticas adicionales con estilo
                 st.metric("Valor Promedio", f"{stats_df['mean']:.2f}")
                 st.metric("Valor Máximo", f"{stats_df['max']:.2f}")
                 st.metric("Valor Mínimo", f"{stats_df['min']:.2f}")
@@ -165,28 +180,27 @@ if uploaded_file is not None:
         with tab3:
             st.subheader('Filtros de Datos')
             
-            # Calcular rango de valores
+            # Calcular el rango de los datos
             min_value = float(df1["variable"].min())
             max_value = float(df1["variable"].max())
             mean_value = float(df1["variable"].mean())
             
-            # Verificar si hay variación en los datos
+            # Verificar variación en los datos
             if min_value == max_value:
-                st.warning(f"⚠ Todos los valores en el dataset son iguales: {min_value:.2f}")
+                st.warning(f"⚠️ Todos los valores en el dataset son iguales: {min_value:.2f}")
                 st.info("No es posible aplicar filtros cuando no hay variación en los datos.")
                 st.dataframe(df1)
             else:
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    # Minimum value filter with custom slider style
+                    # Filtro de valor mínimo con slider estilizado
                     min_val = st.slider(
                         'Valor mínimo',
                         min_value,
                         max_value,
                         mean_value,
-                        key="min_val",
-                        help="Ajuste el valor mínimo para filtrar los datos."
+                        key="min_val"
                     )
                     
                     filtrado_df_min = df1[df1["variable"] > min_val]
@@ -194,21 +208,20 @@ if uploaded_file is not None:
                     st.dataframe(filtrado_df_min)
                     
                 with col2:
-                    # Maximum value filter with custom slider style
+                    # Filtro de valor máximo con slider estilizado
                     max_val = st.slider(
                         'Valor máximo',
                         min_value,
                         max_value,
                         mean_value,
-                        key="max_val",
-                        help="Ajuste el valor máximo para filtrar los datos."
+                        key="max_val"
                     )
                     
                     filtrado_df_max = df1[df1["variable"] < max_val]
                     st.write(f"Registros con valor inferior a {max_val:.2f}:")
                     st.dataframe(filtrado_df_max)
 
-                # Download filtered data with custom button style
+                # Botón para descargar los datos filtrados con estilo personalizado
                 if st.button('Descargar datos filtrados'):
                     csv = filtrado_df_min.to_csv().encode('utf-8')
                     st.download_button(
@@ -225,17 +238,17 @@ if uploaded_file is not None:
             
             with col1:
                 st.write("### Ubicación del Sensor")
-                st.write("*Universidad EAFIT*")
-                st.write("- Latitud: 6.2006")
-                st.write("- Longitud: -75.5783")
-                st.write("- Altitud: ~1,495 metros sobre el nivel del mar")
+                st.write("**Centro Comercial El Tesoro**")
+                st.write("- Latitud: 6.1861")
+                st.write("- Longitud: -75.5776")
+                st.write("- Altitud: ~1,545 metros sobre el nivel del mar")
             
             with col2:
                 st.write("### Detalles del Sensor")
                 st.write("- Tipo: ESP32")
                 st.write("- Variable medida: Según configuración del sensor")
                 st.write("- Frecuencia de medición: Según configuración")
-                st.write("- Ubicación: Campus universitario")
+                st.write("- Ubicación: Centro comercial")
 
     except Exception as e:
         st.error(f'Error al procesar el archivo: {str(e)}')
@@ -243,9 +256,9 @@ if uploaded_file is not None:
 else:
     st.warning('Por favor, cargue un archivo CSV para comenzar el análisis.')
 
-# Custom footer styling
+# Estilo personalizado para el pie de página
 st.markdown("""
     ---
     Desarrollado para el análisis de datos de sensores urbanos.
-    Ubicación: Universidad EAFIT, Medellín, Colombia
+    Ubicación: Centro Comercial El Tesoro, Medellín, Colombia
 """, unsafe_allow_html=True)
